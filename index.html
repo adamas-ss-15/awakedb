@@ -202,6 +202,11 @@
  .btn-save.visible { display: block; }
  .btn-add-entry { background: var(--ink-light); color: var(--parchment); display: none; }
  .btn-add-entry.visible { display: block; }
+ .btn-export { background: #1a5276; color: white; }
+ .btn-export:hover { background: #1f6f9f; }
+ .btn-import { background: #6c3483; color: white; }
+ .btn-import:hover { background: #8e44ad; }
+ .btn-import-file { display: none; }
  .edit-hint {
  position: fixed; top: 0; left: 0; right: 0;
  background: var(--red-ink); color: var(--parchment);
@@ -662,6 +667,9 @@
   </div>
 </div>
 <div class="edit-toolbar">
+  <button class="btn-export" id="btnExport" onclick="exportAsHTML()">エクスポート</button>
+  <button class="btn-import" id="btnImport" onclick="document.getElementById('importFile').click()">インポート</button>
+  <input type="file" id="importFile" class="btn-import-file" accept=".json" onchange="importJSON(this)">
   <button class="btn-save" id="btnSave" onclick="saveData()">保存する</button>
   <button class="btn-add-entry" id="btnAdd" onclick="addEntry()">＋ エントリー追加</button>
   <button class="btn-edit-toggle" id="btnEdit" onclick="toggleEdit()">編集モード</button>
@@ -790,6 +798,7 @@ const DEFAULT_DATA = {
 };
 let zukanData, isEditing = false, currentImgTarget = null, currentTab = "概要";
 let currentLinkCat = null, currentLinkIdx = null;
+const isViewMode = new URLSearchParams(window.location.search).get('mode') === 'view';
 function getPrefix(cat) {
   const map = { '人類':'H', '動物':'A', '植物':'P', '無機物':'O', '概要':'I' };
   return map[cat] || 'X';
@@ -822,6 +831,12 @@ function init() {
     });
   });
   Object.keys(zukanData).forEach(cat => renumberEntries(cat));
+  if (isViewMode) {
+    const toolbar = document.querySelector('.edit-toolbar');
+    if (toolbar) toolbar.style.display = 'none';
+    const editHint = document.getElementById('editHint');
+    if (editHint) editHint.style.display = 'none';
+  }
   buildTabs();
   renderContent(currentTab);
 }
@@ -862,7 +877,7 @@ function renderContent(cat) {
       const dateDisplay = s.date || '';
       html += `
         <div class="story-card" data-cat="${cat}" data-idx="${idx}" id="entry-${cat}-${idx}" style="position:relative">
-          <button class="delete-entry-btn" onclick="deleteEntry('${cat}',${idx})" title="削除">×</button>
+          ${isViewMode ? '' : `<button class="delete-entry-btn" onclick="deleteEntry('${cat}',${idx})" title="削除">×</button>`}
           <div class="story-title" data-field="title">${s.title}</div>
           <div class="story-meta" data-field="meta">${s.meta}</div>
           <div class="story-date" data-field="date">${dateDisplay ? '投稿日：' + dateDisplay : ''}</div>
@@ -884,7 +899,7 @@ function renderContent(cat) {
       const linksHtml = renderLinks(cat, idx, e.links || []);
       html += `
         <div class="entry-card" data-cat="${cat}" data-idx="${idx}" id="entry-${cat}-${idx}" style="position:relative">
-          <button class="delete-entry-btn" onclick="deleteEntry('${cat}',${idx})" title="削除">×</button>
+          ${isViewMode ? '' : `<button class="delete-entry-btn" onclick="deleteEntry('${cat}',${idx})" title="削除">×</button>`}
           <div class="entry-header" onclick="this.parentElement.classList.toggle('open')">
             <span class="entry-id">${e.id}</span>
             <span class="entry-name" data-field="name">${e.name}</span>
@@ -893,9 +908,9 @@ function renderContent(cat) {
           </div>
           <div class="entry-body">
             <div class="entry-layout">
-              <div class="entry-illustration" data-cat="${cat}" data-idx="${idx}" onclick="openImgModal(this)">
+              <div class="entry-illustration" data-cat="${cat}" data-idx="${idx}" ${isViewMode ? '' : 'onclick="openImgModal(this)"'}>
                 ${imgHtml}
-                <div class="img-edit-overlay">クリックで<br>画像を設定</div>
+                ${isViewMode ? '' : '<div class="img-edit-overlay">クリックで<br>画像を設定</div>'}
               </div>
               <div class="entry-text">
                 <p data-field="body">${(e.body||'').replace(/\n/g,'<br>')}</p>
@@ -937,13 +952,16 @@ function renderLinks(cat, idx, links) {
   let items = links.map((lk, li) =>
     `<span class="entry-link-item">
       <a href="${lk.url}" target="_blank">${lk.label}</a>
-      <button class="link-remove-btn" onclick="removeLink('${cat}',${idx},${li})" title="削除">×</button>
+      ${isViewMode ? '' : `<button class="link-remove-btn" onclick="removeLink('${cat}',${idx},${li})" title="削除">×</button>`}
     </span>`
   ).join('');
+  const noLinkMsg = '<span style="font-size:11px;color:var(--card-text-faint);font-style:italic">リンクなし</span>';
+  const addBtn = isViewMode ? '' : `<br><button class="link-add-btn" onclick="openLinkModal('${cat}',${idx})">＋ リンク追加</button>`;
+  if (isViewMode && links.length === 0) return '';
   return `<div class="entry-links">
     <div class="entry-links-label">LINKS</div>
-    ${items || '<span style="font-size:11px;color:var(--card-text-faint);font-style:italic">リンクなし</span>'}
-    <br><button class="link-add-btn" onclick="openLinkModal('${cat}',${idx})">＋ リンク追加</button>
+    ${items || noLinkMsg}
+    ${addBtn}
   </div>`;
 }
 function onSearch(query) {
@@ -990,6 +1008,7 @@ document.addEventListener('click', (e) => {
   }
 });
 function toggleEdit() {
+  if (isViewMode) return;
   isEditing = !isEditing;
   const btn = document.getElementById('btnEdit');
   btn.classList.toggle('active', isEditing);
@@ -1080,6 +1099,67 @@ function removeLink(cat, idx, linkIdx) {
   renderContent(currentTab);
 }
 document.getElementById('linkUrlInput').addEventListener('keydown', e => { if (e.key === 'Enter') applyLink(); });
+
+function exportAsHTML() {
+  if (isEditing) collectEdits();
+  const dataToEmbed = JSON.stringify(zukanData);
+  const currentHTML = document.documentElement.outerHTML;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(currentHTML, 'text/html');
+  const scripts = doc.querySelectorAll('script');
+  scripts.forEach(script => {
+    const text = script.textContent;
+    if (text.includes('DEFAULT_DATA')) {
+      script.textContent = text.replace(
+        /const saved = localStorage\.getItem\('awake_zukan_data'\);\s*\n\s*zukanData = saved \? JSON\.parse\(saved\) : JSON\.parse\(JSON\.stringify\(DEFAULT_DATA\)\);/,
+        `const saved = localStorage.getItem('awake_zukan_data');\n  const EMBEDDED_DATA = ${dataToEmbed};\n  zukanData = EMBEDDED_DATA;`
+      );
+    }
+  });
+  const blob = new Blob(['<!DOCTYPE html>\n' + doc.documentElement.outerHTML], { type: 'text/html; charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'index.html';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  alert('HTMLファイルをエクスポートしました！\\nこのファイルをGitHubにアップロードしてください。');
+}
+
+function importJSON(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (typeof imported !== 'object' || Array.isArray(imported)) {
+        alert('無効なデータ形式です。');
+        return;
+      }
+      zukanData = imported;
+      Object.keys(zukanData).forEach(cat => renumberEntries(cat));
+      localStorage.setItem('awake_zukan_data', JSON.stringify(zukanData));
+      buildTabs();
+      renderContent(currentTab);
+      alert('データをインポートしました！');
+    } catch (err) {
+      alert('ファイルの読み込みに失敗しました：' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
+function exportJSON() {
+  if (isEditing) collectEdits();
+  const blob = new Blob([JSON.stringify(zukanData, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'awake_data_backup.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 init();
 </script>
 </body>
